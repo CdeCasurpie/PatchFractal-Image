@@ -3,564 +3,1149 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Fractal por Patches v7.0 (Web Port)</title>
+    <title>Fractal Viewer - Deep Space Interface (Optimized)</title>
     <style>
-        body {
-            font-family: sans-serif;
-            display: grid;
-            place-items: center;
-            min-height: 100vh;
-            background-color: #111;
-            color: #eee;
+        /* [EL CSS (SIN CAMBIOS) VA AQUÍ] */
+        * {
             margin: 0;
+            padding: 0;
+            box-sizing: border-box;
         }
-        canvas {
-            border: 1px solid #555;
+
+        @font-face {
+            font-family: 'Retro';
+            src: local('Courier New'), local('Courier'), monospace;
+        }
+
+        body {
+            font-family: 'Retro', monospace;
+            background: #0a0a1a;
+            color: #00ff88;
+            overflow: hidden;
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        /* Fondo animado con estrellas */
+        #stars-canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 0;
+            pointer-events: none;
+        }
+
+        /* Contenedor principal */
+        .container {
+            position: relative;
+            z-index: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            padding: 20px;
+        }
+
+        /* Header retro */
+        .header {
+            text-align: center;
+            margin-bottom: 20px;
+            text-shadow: 0 0 10px #00ff88;
+        }
+
+        .header h1 {
+            font-size: 2em;
+            letter-spacing: 4px;
+            animation: glow 2s ease-in-out infinite alternate;
+        }
+
+        @keyframes glow {
+            from { text-shadow: 0 0 5px #00ff88, 0 0 10px #00ff88; }
+            to { text-shadow: 0 0 10px #00ff88, 0 0 20px #00ff88, 0 0 30px #00ff88; }
+        }
+
+        /* Pantalla principal tipo CRT */
+        .screen-frame {
+            background: linear-gradient(145deg, #2a2a3a, #1a1a2a);
+            border: 4px solid #444;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 
+                0 0 20px rgba(0, 255, 136, 0.3),
+                inset 0 0 20px rgba(0, 0, 0, 0.5);
+            position: relative;
+        }
+
+        .screen {
+            width: 600px;
+            height: 600px;
+            background: #000;
+            border: 2px solid #666;
+            position: relative;
+            overflow: hidden;
+            box-shadow: inset 0 0 50px rgba(0, 255, 136, 0.1);
+        }
+
+        /* Canvas del fractal */
+        #fractal-canvas {
+            width: 100%;
+            height: 100%;
+            image-rendering: pixelated;
             cursor: grab;
         }
-        canvas:active {
+
+        #fractal-canvas:active {
             cursor: grabbing;
         }
-        #status {
+
+        /* Overlay de scanlines CRT */
+        .scanlines {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            background: repeating-linear-gradient(
+                0deg,
+                rgba(0, 0, 0, 0.15),
+                rgba(0, 0, 0, 0.15) 1px,
+                transparent 1px,
+                transparent 2px
+            );
+            animation: flicker 0.15s infinite;
+        }
+
+        @keyframes flicker {
+            0% { opacity: 0.9; }
+            50% { opacity: 0.95; }
+            100% { opacity: 0.9; }
+        }
+
+        /* Panel de controles */
+        .controls {
+            margin-top: 20px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            justify-content: center;
+            align-items: center;
+            padding: 15px;
+            background: rgba(26, 26, 42, 0.8);
+            border: 2px solid #444;
+            border-radius: 8px;
+            max-width: 640px;
+        }
+
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .key-button {
+            background: linear-gradient(145deg, #2a2a3a, #1a1a2a);
+            border: 2px solid #00ff88;
+            color: #00ff88;
+            padding: 8px 16px;
+            font-family: 'Retro', monospace;
+            font-size: 14px;
+            cursor: pointer;
+            border-radius: 4px;
+            transition: all 0.2s;
+            box-shadow: 0 0 10px rgba(0, 255, 136, 0.2);
+        }
+
+        .key-button:hover {
+            background: #00ff88;
+            color: #0a0a1a;
+            box-shadow: 0 0 20px rgba(0, 255, 136, 0.6);
+            transform: translateY(-2px);
+        }
+
+        .key-button:active {
+            transform: translateY(0);
+        }
+
+        .key-label {
+            display: inline-block;
+            background: #1a1a2a;
+            border: 1px solid #00ff88;
+            padding: 4px 8px;
+            border-radius: 3px;
+            font-size: 12px;
+            min-width: 30px;
+            text-align: center;
+        }
+
+        /* Selector de proyecto */
+        .project-selector {
+            margin-bottom: 20px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        select {
+            background: #1a1a2a;
+            color: #00ff88;
+            border: 2px solid #00ff88;
+            padding: 8px 16px;
+            font-family: 'Retro', monospace;
+            font-size: 14px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        select:focus {
+            outline: none;
+            box-shadow: 0 0 10px rgba(0, 255, 136, 0.5);
+        }
+
+        /* Info panel */
+        .info-panel {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(26, 26, 42, 0.9);
+            border: 1px solid #00ff88;
+            padding: 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            max-width: 200px;
+        }
+
+        .info-panel div {
+            margin: 5px 0;
+        }
+
+        /* Loading spinner */
+        .loading {
             position: absolute;
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            font-size: 1.5em;
-            background-color: rgba(0, 0, 0, 0.8);
-            padding: 20px;
-            border-radius: 8px;
             text-align: center;
-            display: none; /* Se muestra con JS */
+            font-size: 20px;
+            animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .screen {
+                width: 90vw;
+                height: 90vw;
+                max-width: 500px;
+                max-height: 500px;
+            }
+            
+            .header h1 {
+                font-size: 1.5em;
+            }
+            
+            .controls {
+                font-size: 12px;
+            }
+            
+            .key-button {
+                padding: 6px 12px;
+                font-size: 12px;
+            }
+        }
+
+        /* Efecto de vignette */
+        .vignette {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            box-shadow: inset 0 0 100px rgba(0, 0, 0, 0.8);
         }
     </style>
 </head>
 <body>
-    <canvas id="fractal-canvas" width="800" height="800"></canvas>
-    
-    <div id="status">
-        <strong id="status-title">Procesando...</strong><br>
-        <span id="status-message">Calculando matches de parches.</span><br>
-        <span id="status-progress">(0/1024)</span>
+    <!-- Canvas de fondo con estrellas -->
+    <canvas id="stars-canvas"></canvas>
+
+    <!-- Contenedor principal -->
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>▼ FRACTAL DEEP SPACE VIEWER ▼</h1>
+        </div>
+
+        <!-- Selector de proyecto -->
+        <div class="project-selector">
+            <label for="project-select">PROYECTO:</label>
+            <select id="project-select">
+                <option value="">-- Seleccionar --</option>
+            </select>
+            <button class="key-button" onclick="loadSelectedProject()">CARGAR</button>
+        </div>
+
+        <!-- Pantalla principal -->
+        <div class="screen-frame">
+            <div class="screen">
+                <canvas id="fractal-canvas"></canvas>
+                <div class="scanlines"></div>
+                <div class="vignette"></div>
+                
+                <!-- Info panel -->
+                <div class="info-panel">
+                    <div>ZOOM: <span id="zoom-level">1.00x</span></div>
+                    <div>LOD: <span id="lod-value">40px</span></div>
+                    <div>BRILLO: <span id="brightness-value">1.15x</span></div>
+                    <div>BLEND: <span id="blend-status">ON</span></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Panel de controles -->
+        <div class="controls">
+            <!-- ... (controles sin cambios) ... -->
+            <div class="control-group">
+                <span class="key-label">ZOOM</span>
+                <span>Rueda / Pinch</span>
+            </div>
+            <div class="control-group">
+                <span class="key-label">PAN</span>
+                <span>Arrastrar / Touch</span>
+            </div>
+            <div class="control-group">
+                <span class="key-label">L</span>
+                <button class="key-button" onclick="adjustBrightness(0.05)">+ Brillo</button>
+            </div>
+            <div class="control-group">
+                <span class="key-label">K</span>
+                <button class="key-button" onclick="adjustBrightness(-0.05)">- Brillo</button>
+            </div>
+            <div class="control-group">
+                <span class="key-label">B</span>
+                <button class="key-button" onclick="toggleBlend()">Toggle Blend</button>
+            </div>
+            <div class="control-group">
+                <span class="key-label">↑/↓</span>
+                <button class="key-button" onclick="adjustLOD(2)">+ LOD</button>
+                <button class="key-button" onclick="adjustLOD(-2)">- LOD</button>
+            </div>
+            <div class="control-group">
+                <span class="key-label">←/→</span>
+                <button class="key-button" onclick="adjustBorderThickness(1)">+ Grosor</button>
+                <button class="key-button" onclick="adjustBorderThickness(-1)">- Grosor</button>
+            </div>
+        </div>
     </div>
 
     <script>
-        // worker.js
-// Equivalente a la función 'find_best_square_resized_diff' de Python.
-
-/**
- * Redimensiona un bloque de píxeles (ImageData) a un tamaño CxC
- * usando un OffscreenCanvas.
- * Esta es la traducción de 'cv2.resize(img, (C, C))'.
- */
-function resizeImageData(imgData, C_SIDE) {
-    // Necesitamos un canvas temporal para dibujar los píxeles originales
-    const tempCanvas = new OffscreenCanvas(imgData.width, imgData.height);
-    const tempCtx = tempCanvas.getContext('2d');
-    tempCtx.putImageData(imgData, 0, 0);
-
-    // Ahora creamos el canvas final al tamaño deseado
-    const resizedCanvas = new OffscreenCanvas(C_SIDE, C_SIDE);
-    const resizedCtx = resizedCanvas.getContext('2d');
-    
-    // Dibujamos la imagen original en el canvas redimensionado
-    // Esto aplica la interpolación (similar a cv2.INTER_AREA/LINEAR)
-    resizedCtx.drawImage(tempCanvas, 0, 0, C_SIDE, C_SIDE);
-    
-    // Devolvemos los datos de píxeles redimensionados
-    return resizedCtx.getImageData(0, 0, C_SIDE, C_SIDE);
-}
-
-/**
- * Calcula el error entre dos imágenes redimensionadas.
- * Esta es la traducción de la métrica MAE y np.linalg.norm.
- */
-function calculateResizedDiff(targResizedData, candResizedData) {
-    const targPixels = targResizedData.data;
-    const candPixels = candResizedData.data;
-    const len = targPixels.length;
-
-    let sumErrorR = 0;
-    let sumErrorG = 0;
-    let sumErrorB = 0;
-
-    for (let i = 0; i < len; i += 4) {
-        sumErrorR += Math.abs(targPixels[i] - candPixels[i]);
-        sumErrorG += Math.abs(targPixels[i+1] - candPixels[i+1]);
-        sumErrorB += Math.abs(targPixels[i+2] - candPixels[i+2]);
-    }
-
-    // np.mean(diff_img, axis=(0, 1))
-    const numPixels = len / 4;
-    const avgErrorR = sumErrorR / numPixels;
-    const avgErrorG = sumErrorG / numPixels;
-    const avgErrorB = sumErrorB / numPixels;
-
-    // np.linalg.norm(avg_error_vec)
-    // Distancia del vector [R, G, B] al origen [0, 0, 0]
-    const score = Math.sqrt(avgErrorR**2 + avgErrorG**2 + avgErrorB**2);
-    
-    return score;
-}
-
-
-/**
- * Función principal del worker.
- * Recibe los datos de la imagen y los parámetros de búsqueda.
- */
-self.onmessage = function(e) {
-    const { 
-        targetIdx, 
-        patches, 
-        imgData, // ImageData completo
-        N, 
-        ks, 
-        numCandidates, 
-        C_SIDE 
-    } = e.data;
-
-    const targetPatch = patches[targetIdx];
-    const patchPx = imgData.height / N;
-
-    // 1. Obtener y redimensionar el parche objetivo UNA VEZ
-    const [tx0, ty0] = targetPatch.bbox;
-    // Extraer la sub-imagen (ImageData)
-    // NOTA: ImageData no tiene un método 'slice' simple.
-    // Creamos una temporal para la extracción.
-    const tempCanvas = new OffscreenCanvas(patchPx, patchPx);
-    const tempCtx = tempCanvas.getContext('2d');
-    tempCtx.putImageData(imgData, -tx0, -ty0);
-    const targetImgData = tempCtx.getImageData(0, 0, patchPx, patchPx);
-    
-    const targImgResized = resizeImageData(targetImgData, C_SIDE);
-    
-    let best = null;
-    let bestScore = Infinity;
-
-    for (const k of ks) {
-        // 2. Generar candidatos aleatorios
-        for (let i = 0; i < numCandidates; i++) {
-            const rt = Math.floor(Math.random() * (N - k + 1));
-            const ct = Math.floor(Math.random() * (N - k + 1));
-            
-            // 3. Obtener y redimensionar el bloque candidato (¡COSTOSO!)
-            const y0 = rt * patchPx;
-            const x0 = ct * patchPx;
-            const size = k * patchPx;
-
-            // Extraer la sub-imagen (ImageData)
-            tempCtx.canvas.width = size;
-            tempCtx.canvas.height = size;
-            tempCtx.putImageData(imgData, -x0, -y0);
-            const candImgData = tempCtx.getImageData(0, 0, size, size);
-
-            const candImgResized = resizeImageData(candImgData, C_SIDE);
-
-            // 4. Calcular diferencia y puntuación
-            const score = calculateResizedDiff(targImgResized, candImgResized);
-
-            // 7. Minimizar la puntuación
-            if (score < bestScore) {
-                bestScore = score;
-                best = { top: [rt, ct], k: k, score: score };
-            }
+        // ==================== BACKGROUND STARS (Sin Cambios) ====================
+        const starsCanvas = document.getElementById('stars-canvas');
+        const starsCtx = starsCanvas.getContext('2d');
+        
+        starsCanvas.width = window.innerWidth;
+        starsCanvas.height = window.innerHeight;
+        
+        const stars = [];
+        const numStars = 200;
+        
+        for (let i = 0; i < numStars; i++) {
+            stars.push({
+                x: Math.random() * starsCanvas.width,
+                y: Math.random() * starsCanvas.height,
+                radius: Math.random() * 2,
+                speed: Math.random() * 0.5 + 0.1,
+                opacity: Math.random() * 0.5 + 0.5
+            });
         }
-    }
-
-    if (best === null) {
-        best = { top: targetPatch.id, k: 1, score: 0.0 };
-    }
-    
-    // Devolver el resultado al hilo principal
-    self.postMessage({ targetIdx, match: best });
-};
-    </script>
-
-    <script>// app.js
-        // Equivalente al 'main()' de Python y las funciones de renderizado.
         
-        // --- CONFIGURACIÓN ---
-        const IMG_PATH = "input.jpg"; // Asegúrate que la ruta sea correcta
-        const IMG_SIDE = 1024;
-        const CANVAS_PX = 800;
-        const LOD_THRESHOLD_PX = 16;
-        const INIT_N = 32;
-        const MAX_K = 16;
-        const RESIZE_C_SIDE = 128;
-        const NUM_RANDOM_CANDIDATES = 2500;
-        // ---------------------
+        function animateStars() {
+            starsCtx.clearRect(0, 0, starsCanvas.width, starsCanvas.height);
+            
+            stars.forEach(star => {
+                star.y += star.speed;
+                if (star.y > starsCanvas.height) {
+                    star.y = 0;
+                    star.x = Math.random() * starsCanvas.width;
+                }
+                
+                starsCtx.fillStyle = `rgba(0, 255, 136, ${star.opacity})`;
+                starsCtx.beginPath();
+                starsCtx.arc(star.x, star.y, star.radius, 0, Math.PI * 2);
+                starsCtx.fill();
+            });
+            
+            requestAnimationFrame(animateStars);
+        }
         
-        // --- Elementos del DOM ---
+        animateStars();
+        
+        // ==================== FRACTAL RENDERER (REFACTORIZADO) ====================
         const canvas = document.getElementById('fractal-canvas');
         const ctx = canvas.getContext('2d');
-        const statusDiv = document.getElementById('status');
-        const statusTitle = document.getElementById('status-title');
-        const statusMessage = document.getElementById('status-message');
-        const statusProgress = document.getElementById('status-progress');
         
-        // --- Estado Global ---
-        let mainImage = null;       // La imagen original (HTMLImageElement)
-        let mainImageData = null;   // Los píxeles de la imagen (ImageData)
-        let patches = [];           // Array de parches (nuestros 'matches')
-        let viewRect = { x: 0, y: 0, w: 1, h: 1 }; // (vx, vy, vw, vh)
-        let lodThresholdPx = LOD_THRESHOLD_PX;
+        // Configuración
+        let CANVAS_SIZE = 600;
+        let project = null;
+        let patches = [];
+        let patchImages = {};
+        let N = 0;
         
-        let panning = false;
-        let lastPanPos = { x: 0, y: 0 };
+        // Estado de la vista
+        let viewX = 0, viewY = 0, viewW = 1, viewH = 1;
+        let lodThreshold = 40;
+        let blendEnabled = true;
+        let brightnessFactor = 1.2;
+        let borderThickness = 2;  // ← NUEVO: Grosor del borde entre patches
         
-        /**
-         * Carga la imagen, la cuadra y la dibuja en un canvas
-         * para extraer sus datos de píxeles (ImageData).
-         */
-        async function loadImage(path, side) {
-            return new Promise((resolve, reject) => {
-                const img = new Image();
-                img.crossOrigin = "Anonymous"; // Para Tainted Canvas
-                img.onload = () => {
-                    // Lógica de recorte cuadrado (como en Python)
-                    const s = Math.min(img.width, img.height);
-                    const cx = img.width / 2;
-                    const cy = img.height / 2;
-                    const sx = cx - s / 2;
-                    const sy = cy - s / 2;
+        // --- NUEVO ESTADO DE RENDERIZADO OPTIMIZADO ---
+        let drawList = [];          // La lista de dibujado cacheada
+        let isViewDirty = true;     // Flag para recalcular la vista
+        let isCalculating = false;  // Flag para saber si estamos calculando
+        let calculationProgress = 0; // Progreso del cálculo (0-100)
         
-                    // Dibujar en un canvas temporal al tamaño deseado
-                    const tempCanvas = document.createElement('canvas');
-                    tempCanvas.width = side;
-                    tempCanvas.height = side;
-                    const tempCtx = tempCanvas.getContext('2d');
-                    
-                    // Dibuja la porción cuadrada de la imagen original,
-                    // redimensionándola al 'side' deseado.
-                    tempCtx.drawImage(img, sx, sy, s, s, 0, 0, side, side);
-                    
-                    // Devolvemos tanto el elemento imagen (para renderizar)
-                    // como sus datos de píxeles (para el worker)
-                    resolve({
-                        imageElement: tempCanvas, // Usamos el canvas como fuente de imagen
-                        imageData: tempCtx.getImageData(0, 0, side, side)
-                    });
-                };
-                img.onerror = (e) => reject(new Error(`No se pudo cargar la imagen: ${path}. Asegúrate de que la ruta sea correcta.`));
-                img.src = path;
+        // --- SISTEMA DE LOD INTELIGENTE ---
+        let lastLODLevel = -1;      // Último nivel de LOD calculado
+        let lastViewX = 0, lastViewY = 0; // Última posición de la vista
+        const LOD_CHANGE_THRESHOLD = 5;  // Cambio de zoom necesario para recalcular
+        const PAN_THRESHOLD = 0.3;  // Movimiento necesario para recalcular (10% del ancho)
+        
+        // --- BATCH PROCESSING ---
+        let batchQueue = [];        // Cola de parches a procesar
+        let batchIndex = 0;         // Índice actual en el batch
+        const BATCH_SIZE = 100;     // Parches a procesar por chunk
+        
+        // Estado de interacción
+        let isPanning = false;
+        let lastX = 0, lastY = 0;
+        let touchStartDist = 0;
+        
+        // Resize canvas
+        function resizeCanvas() {
+            const screen = document.querySelector('.screen');
+            const size = Math.min(screen.clientWidth, screen.clientHeight);
+            CANVAS_SIZE = size;
+            canvas.width = size;
+            canvas.height = size;
+            isViewDirty = true; // Invalidar la vista
+        }
+        
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas(); // Llamada inicial
+        
+        // ==================== PROJECT LOADING (OPTIMIZADO) ====================
+        async function loadProjects() {
+            try {
+                // ✨ NUEVO: Cargar desde projects.json (compatible con GitHub Pages)
+                const response = await fetch('output/projects.json');
+                const data = await response.json();
+                
+                const select = document.getElementById('project-select');
+                select.innerHTML = '<option value="">-- Seleccionar --</option>';
+                
+                data.projects.forEach(projectName => {
+                    const option = document.createElement('option');
+                    option.value = projectName;
+                    option.textContent = projectName;
+                    select.appendChild(option);
+                });
+            } catch (error) {
+                console.error('Error loading projects:', error);
+                // Fallback: intentar el método antiguo (solo funciona con servidor Python)
+                try {
+                    await loadProjectsFromDirectory();
+                } catch (e) {
+                    console.error('Fallback también falló:', e);
+                }
+            }
+        }
+        
+        // Método antiguo (solo funciona con servidor Python)
+        async function loadProjectsFromDirectory() {
+            const response = await fetch('output/');
+            const html = await response.text();
+            
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            const links = doc.querySelectorAll('a');
+            
+            const select = document.getElementById('project-select');
+            select.innerHTML = '<option value="">-- Seleccionar --</option>';
+            
+            links.forEach(link => {
+                const href = link.getAttribute('href');
+                if (href && href !== '../' && !href.startsWith('/')) {
+                    const projectName = href.replace(/\/$/, '');
+                    const option = document.createElement('option');
+                    option.value = projectName;
+                    option.textContent = projectName;
+                    select.appendChild(option);
+                }
             });
         }
         
-        /**
-         * Pre-cálculo: Divide la imagen en parches (solo BBox).
-         * El worker se encargará de extraer los píxeles.
-         */
-        function buildStaticPatches(N, imgSide) {
-            const patchPx = imgSide / N;
-            const generatedPatches = [];
-            for (let r = 0; r < N; r++) {
-                for (let c = 0; c < N; c++) {
-                    const x0 = c * patchPx;
-                    const y0 = r * patchPx;
-                    generatedPatches.push({
-                        id: [r, c],
-                        bbox: [x0, y0], // Solo necesitamos la esquina superior izquierda
-                        match: null
-                    });
-                }
+        async function loadSelectedProject() {
+            const select = document.getElementById('project-select');
+            const projectName = select.value;
+            
+            if (!projectName) {
+                alert('Selecciona un proyecto');
+                return;
             }
-            return generatedPatches;
+            
+            await loadProject(projectName);
         }
         
-        /**
-         * Genera la lista de 'k' candidatos.
-         */
-        function candidateKs(N, max_k) {
-            let ks = [];
-            const upper = Math.min(max_k, N);
-            // JS 'range' es más feo
-            for (let k = upper; k > 1; k--) {
-                if (k % 2 === 0) {
-                    ks.push(k);
-                }
-            }
-            if (ks.length === 0 && N >= 2) {
-                ks = [2];
-            }
-            return ks;
-        }
-        
-        /**
-         * Orquesta el pool de Web Workers para calcular los matches.
-         */
-        function buildStaticMatches(imgData, N, max_k, numCandidates, C_SIDE) {
-            return new Promise((resolve) => {
-                console.log("Fase 1: Pre-cálculo de parches (BBoxes)...");
-                patches = buildStaticPatches(N, imgData.height);
-                const ks = candidateKs(N, max_k);
-                const total = patches.length;
-        
-                console.log(`Fase 2: Búsqueda de matches (paralelizada)...`);
-                console.warn("ADVERTENCIA: Esta métrica es lenta en JS/CPU.");
+        async function loadProject(projectName) {
+            try {
+                console.log(`Loading project: ${projectName}`);
                 
-                statusDiv.style.display = 'block';
-                statusProgress.textContent = `(0/${total})`;
-        
-                const numWorkers = navigator.hardwareConcurrency || 4;
-                const workers = [];
-                let taskQueue = [...patches.keys()]; // Cola de índices [0, 1, ..., total-1]
-                let results = 0;
-        
-                for (let i = 0; i < numWorkers; i++) {
-                    const worker = new Worker('worker.js');
-                    worker.onmessage = (e) => {
-                        const { targetIdx, match } = e.data;
-                        patches[targetIdx].match = match;
-                        results++;
-                        
-                        // Actualizar UI
-                        statusProgress.textContent = `(${results}/${total})`;
-        
-                        if (taskQueue.length > 0) {
-                            // Enviar siguiente tarea al worker
-                            const nextTaskIdx = taskQueue.pop();
-                            worker.postMessage({
-                                targetIdx: nextTaskIdx,
-                                patches: patches,
-                                imgData: imgData,
-                                N: N,
-                                ks: ks,
-                                numCandidates: numCandidates,
-                                C_SIDE: C_SIDE
-                            });
-                        } else {
-                            // Este worker terminó
-                            worker.terminate();
-                        }
-        
-                        if (results === total) {
-                            console.log("Cálculo de matches completado.");
-                            statusDiv.style.display = 'none';
-                            resolve(patches);
-                        }
-                    };
-                    workers.push(worker);
-                }
-        
-                // Iniciar las primeras tareas
-                for (let i = 0; i < numWorkers; i++) {
-                    if (taskQueue.length > 0) {
-                        const taskIdx = taskQueue.pop();
-                        workers[i].postMessage({
-                            targetIdx: taskIdx,
-                            patches: patches,
-                            imgData: imgData,
-                            N: N,
-                            ks: ks,
-                            numCandidates: numCandidates,
-                            C_SIDE: C_SIDE
-                        });
+                // Show loading
+                ctx.fillStyle = '#0a0a1a';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.fillStyle = '#00ff88';
+                ctx.font = '20px monospace';
+                ctx.textAlign = 'center';
+                ctx.fillText('LOADING...', canvas.width / 2, canvas.height / 2);
+                
+                // ✨ OPTIMIZACIÓN: Cargar solo 2 archivos (source.png + project.json)
+                console.log('📂 Cargando project.json...');
+                const jsonResponse = await fetch(`output/${projectName}/project.json`);
+                project = await jsonResponse.json();
+                
+                N = project.metadata.N;
+                patches = project.patches;
+                
+                console.log(`✓ JSON cargado: ${patches.length} patches definidos`);
+                
+                // Cargar imagen original (una sola petición HTTP)
+                console.log('🖼️ Cargando source.png...');
+                const sourceImg = new Image();
+                await new Promise((resolve, reject) => {
+                    sourceImg.onload = () => resolve();
+                    sourceImg.onerror = () => reject(new Error('Failed to load source.png'));
+                    sourceImg.src = `output/${projectName}/source.png`;
+                });
+                
+                console.log(`✓ Imagen original cargada: ${sourceImg.width}x${sourceImg.height}`);
+                
+                // Extraer patches desde la imagen original usando canvas
+                console.log('✂️ Extrayendo patches desde source.png...');
+                patchImages = {};
+                
+                // Crear canvas temporal para extraer regiones
+                const tempCanvas = document.createElement('canvas');
+                const tempCtx = tempCanvas.getContext('2d');
+                
+                for (let i = 0; i < patches.length; i++) {
+                    const patch = patches[i];
+                    const [r, c] = patch.id;
+                    const [x0, y0, x1, y1] = patch.bbox;
+                    
+                    const patchWidth = x1 - x0;
+                    const patchHeight = y1 - y0;
+                    
+                    // Configurar canvas temporal
+                    tempCanvas.width = patchWidth;
+                    tempCanvas.height = patchHeight;
+                    
+                    // Extraer región desde la imagen original
+                    tempCtx.drawImage(
+                        sourceImg,
+                        x0, y0, patchWidth, patchHeight,  // source rect
+                        0, 0, patchWidth, patchHeight     // dest rect
+                    );
+                    
+                    // Convertir a Image para usar en drawImage()
+                    const patchImg = new Image();
+                    patchImg.src = tempCanvas.toDataURL();
+                    patchImages[`${r}_${c}`] = patchImg;
+                    
+                    // Mostrar progreso cada 10%
+                    if (i % Math.floor(patches.length / 10) === 0) {
+                        const progress = Math.round((i / patches.length) * 100);
+                        ctx.fillStyle = '#0a0a1a';
+                        ctx.fillRect(0, 0, canvas.width, canvas.height);
+                        ctx.fillStyle = '#00ff88';
+                        ctx.fillText(`EXTRACTING PATCHES... ${progress}%`, canvas.width / 2, canvas.height / 2);
                     }
                 }
-            });
+                
+                console.log(`✅ ${patches.length} patches extraídos (0 peticiones HTTP adicionales)`);
+                console.log(`⚡ Velocidad: ~${patches.length}x más rápido que cargar archivos individuales`);
+                
+                // Reset view
+                viewX = 0;
+                viewY = 0;
+                viewW = 1;
+                viewH = 1;
+                
+                isViewDirty = true; // Marcar para el primer render
+                
+            } catch (error) {
+                console.error('Error loading project:', error);
+                alert(`Error al cargar proyecto: ${error.message}`);
+            }
+        }
+        
+        // ==================== NUEVA ARQUITECTURA DE RENDERIZADO ====================
+        
+        /**
+         * Bucle principal de dibujado (60fps).
+         * Es "tonto": solo dibuja si la vista está sucia o dibuja la vista cacheada.
+         */
+        function drawLoop() {
+            requestAnimationFrame(drawLoop);
+            
+            if (!project) return; // No hay proyecto cargado
+            
+            if (isViewDirty && !isCalculating) {
+                // Verificar si realmente necesitamos recalcular
+                if (shouldRecalculate()) {
+                    startBatchCalculation();
+                } else {
+                    // No es necesario recalcular, solo actualizar drawList con las coordenadas
+                    updateDrawListCoordinates();
+                    isViewDirty = false;
+                }
+            }
+            
+            drawCachedView(); // 2. Dibujar la vista (barato)
+            
+            // Dibujar indicador de progreso si estamos calculando
+            if (isCalculating) {
+                drawProgressIndicator();
+            }
         }
         
         /**
-         * Función de dibujado recursivo, equivalente a 'render_dynamic_zoom'.
+         * Determina si necesitamos recalcular la subdivisión completa.
+         * Solo recalcula cuando el nivel de LOD cambia significativamente.
          */
-        function renderNode(r, c, normBbox) {
-            const [nx, ny, nw, nh] = normBbox;
+        function shouldRecalculate() {
+            const currentZoom = 1 / viewW;
+            const currentLODLevel = Math.floor(Math.log2(currentZoom));
             
-            // 1. Frustum Culling (¿Está fuera de la vista?)
-            if (nx + nw < viewRect.x || nx > viewRect.x + viewRect.w ||
-                ny + nh < viewRect.y || ny > viewRect.y + viewRect.h) {
-                return;
+            // Calcular la diferencia de nivel de LOD
+            const lodDifference = Math.abs(currentLODLevel - lastLODLevel);
+            
+            // Calcular cuánto nos hemos movido
+            const panDistance = Math.hypot(viewX - lastViewX, viewY - lastViewY);
+            const panRatio = panDistance / viewW;
+            
+            // Recalcular si:
+            // 1. El nivel de LOD cambió significativamente
+            // 2. Nos movimos mucho (salimos del área cacheada)
+            // 3. Es la primera vez
+            const needsRecalc = 
+                lastLODLevel === -1 || 
+                lodDifference >= LOD_CHANGE_THRESHOLD ||
+                panRatio > PAN_THRESHOLD;
+            
+            if (needsRecalc) {
+                console.log(`🔄 Recalculando: LOD ${lastLODLevel} → ${currentLODLevel}, Pan: ${(panRatio * 100).toFixed(1)}%`);
             }
+            
+            return needsRecalc;
+        }
         
-            // 2. Calcular coordenadas de pantalla
-            const sx = (nx - viewRect.x) / viewRect.w * CANVAS_PX;
-            const sy = (ny - viewRect.y) / viewRect.h * CANVAS_PX;
-            const sw = nw / viewRect.w * CANVAS_PX;
-            const sh = nh / viewRect.h * CANVAS_PX;
-        
-            // 3. Obtener el nodo
-            const idx = r * INIT_N + c;
-            if (idx >= patches.length) return;
-            const node = patches[idx];
-        
-            // 4. Decidir si recursar (LOD)
-            if (sw < lodThresholdPx || sh < lodThresholdPx ||
-                !node.match || node.match.k <= 1) {
+        /**
+         * Actualiza solo las coordenadas de la drawList existente sin recalcular subdivisiones.
+         * Esto es MUY rápido y permite pan/zoom suaves sin recálculos.
+         */
+        function updateDrawListCoordinates() {
+            if (drawList.length === 0) return;
+            
+            // Solo recalcular las coordenadas de pantalla para cada parche
+            for (let i = 0; i < drawList.length; i++) {
+                const item = drawList[i];
+                const patch = item.patch;
                 
-                // Caso Base: Dibujar el parche de la imagen original
-                // (En Python era blit_patch_img, aquí usamos drawImage)
-                const [imgX, imgY] = node.bbox;
-                const patchPx = mainImage.height / INIT_N;
+                // Recalcular coordenadas normalizadas desde el patch
+                // (esto requiere guardar las coordenadas normalizadas originales)
+                if (!item.nx) continue; // Skip si no tiene coordenadas normalizadas
+                
+                const nx = item.nx;
+                const ny = item.ny;
+                const nw = item.nw;
+                const nh = item.nh;
+                
+                // Recalcular coordenadas de pantalla
+                item.sx = (nx - viewX) / viewW * CANVAS_SIZE;
+                item.sy = (ny - viewY) / viewH * CANVAS_SIZE;
+                item.sw = nw / viewW * CANVAS_SIZE;
+                item.sh = nh / viewH * CANVAS_SIZE;
+            }
+            
+            console.log(`✨ Actualización rápida: ${drawList.length} parches reposicionados`);
+        }
         
-                ctx.drawImage(
-                    mainImage,       // La imagen fuente completa
-                    imgX, imgY,      // (sx, sy) Píxel de origen en la fuente
-                    patchPx, patchPx, // (sw, sh) Tamaño en la fuente
-                    sx, sy,          // (dx, dy) Píxel de destino en el canvas
-                    sw, sh           // (dw, dh) Tamaño en el canvas
-                );
+        /**
+         * Inicia el cálculo por lotes (batch processing)
+         */
+        function startBatchCalculation() {
+            isCalculating = true;
+            calculationProgress = 0;
+            drawList = []; // Limpiar la lista
+            batchQueue = [];
+            batchIndex = 0;
+            
+            // Guardar el estado actual para la siguiente comparación
+            const currentZoom = 1 / viewW;
+            lastLODLevel = Math.floor(Math.log2(currentZoom));
+            lastViewX = viewX;
+            lastViewY = viewY;
+            
+            if (!project || patches.length === 0) {
+                isCalculating = false;
+                isViewDirty = false;
                 return;
             }
             
-            // 5. Caso Recursivo
-            const { top, k } = node.match;
-            const [top_r, top_c] = top;
+            const normPatchW = 1.0 / N;
+            const normPatchH = 1.0 / N;
             
-            const childNw = nw / k;
-            const childNh = nh / k;
+            // Crear cola de trabajo: todos los parches base
+            for (let r = 0; r < N; r++) {
+                for (let c = 0; c < N; c++) {
+                    const nx = c * normPatchW;
+                    const ny = r * normPatchH;
+                    batchQueue.push({ r, c, nx, ny, nw: normPatchW, nh: normPatchH });
+                }
+            }
+            
+            console.log(`🚀 Iniciando cálculo por lotes: ${batchQueue.length} parches base`);
+            
+            // Iniciar el procesamiento
+            processBatch();
+        }
         
+        /**
+         * Procesa un batch de parches (se llama recursivamente con requestIdleCallback)
+         */
+        function processBatch() {
+            if (batchIndex >= batchQueue.length) {
+                // Terminamos
+                finishCalculation();
+                return;
+            }
+            
+            // Procesar un batch de parches
+            const endIndex = Math.min(batchIndex + BATCH_SIZE, batchQueue.length);
+            
+            for (let i = batchIndex; i < endIndex; i++) {
+                const task = batchQueue[i];
+                renderNodeCalculator(task.r, task.c, task.nx, task.ny, task.nw, task.nh);
+            }
+            
+            batchIndex = endIndex;
+            calculationProgress = Math.round((batchIndex / batchQueue.length) * 100);
+            
+            // Continuar en el próximo idle callback (o en el siguiente frame)
+            if (window.requestIdleCallback) {
+                requestIdleCallback(() => processBatch(), { timeout: 16 });
+            } else {
+                setTimeout(() => processBatch(), 0);
+            }
+        }
+        
+        /**
+         * Finaliza el cálculo
+         */
+        function finishCalculation() {
+            isCalculating = false;
+            isViewDirty = false;
+            calculationProgress = 100;
+            
+            console.log(`✅ Cálculo completado: ${drawList.length} parches en drawList`);
+            
+            updateInfo(); // Actualizar la UI
+        }
+        
+        /**
+         * Calcula la lista de parches visibles y la guarda en 'drawList'.
+         * Esta es la función costosa que solo se ejecuta cuando la vista cambia.
+         */
+        function updateView() {
+            // DEPRECATED: Reemplazada por startBatchCalculation()
+            // Mantenida para compatibilidad
+            startBatchCalculation();
+        }
+        
+        /**
+         * Dibuja el contenido del 'drawList' cacheado en el canvas.
+         * Esta función es muy rápida.
+         */
+        function drawCachedView() {
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // 1. Aplicar efectos globales de GPU
+            if (brightnessFactor !== 1.0) {
+                ctx.filter = `brightness(${brightnessFactor * 100}%)`;
+            }
+            if (blendEnabled) {
+                ctx.globalCompositeOperation = 'lighter'; // Blend Aditivo
+            }
+            
+            // 2. Dibujar la lista de parches
+            for (const item of drawList) {
+                renderPatchOptimizado(item);
+            }
+            
+            // 3. Resetear efectos de GPU
+            if (brightnessFactor !== 1.0) {
+                ctx.filter = 'none';
+            }
+            if (blendEnabled) {
+                ctx.globalCompositeOperation = 'source-over';
+            }
+        }
+        
+        /**
+         * Dibuja un indicador de progreso mientras se calcula
+         */
+        function drawProgressIndicator() {
+            const barWidth = 200;
+            const barHeight = 20;
+            const x = (canvas.width - barWidth) / 2;
+            const y = canvas.height - 50;
+            
+            // Fondo de la barra
+            ctx.fillStyle = 'rgba(26, 26, 42, 0.8)';
+            ctx.fillRect(x - 5, y - 5, barWidth + 10, barHeight + 10);
+            
+            // Borde
+            ctx.strokeStyle = '#00ff88';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(x - 5, y - 5, barWidth + 10, barHeight + 10);
+            
+            // Barra de progreso
+            const progress = calculationProgress / 100;
+            ctx.fillStyle = '#00ff88';
+            ctx.fillRect(x, y, barWidth * progress, barHeight);
+            
+            // Texto
+            ctx.fillStyle = '#00ff88';
+            ctx.font = '12px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText(`CALCULANDO... ${calculationProgress}%`, canvas.width / 2, y - 10);
+        }
+        
+        /**
+         * (NUEVO) Reemplaza a 'renderNode'.
+         * Esta función es un *calculador*. No dibuja, solo
+         * calcula la subdivisión y añade parches visibles al 'drawList'.
+         */
+        function renderNodeCalculator(r, c, nx, ny, nw, nh) {
+            // Frustum culling
+            if (nx + nw < viewX || nx > viewX + viewW ||
+                ny + nh < viewY || ny > viewY + viewH) {
+                return;
+            }
+            
+            // Calculate screen coordinates
+            const sx = (nx - viewX) / viewW * CANVAS_SIZE;
+            const sy = (ny - viewY) / viewH * CANVAS_SIZE;
+            const sw = nw / viewW * CANVAS_SIZE;
+            const sh = nh / viewH * CANVAS_SIZE;
+            
+            const idx = r * N + c;
+            if (idx >= patches.length) return;
+            
+            const patch = patches[idx];
+            
+            // LOD check
+            if (sw < lodThreshold || sh < lodThreshold ||
+                !patch.match || patch.match.k <= 1) {
+                
+                // CASO BASE: Añadir al drawList y parar recursión
+                // Guardar también las coordenadas normalizadas para actualización rápida
+                drawList.push({ 
+                    patch, 
+                    sx, sy, sw, sh,
+                    nx, ny, nw, nh  // ← NUEVO: coordenadas normalizadas
+                });
+                return;
+            }
+            
+            // CASO RECURSIVO: Subdividir
+            const match = patch.match;
+            const k = match.k;
+            const [topR, topC] = match.top;
+            
+            const childNW = nw / k;
+            const childNH = nh / k;
+            
             for (let rr = 0; rr < k; rr++) {
                 for (let cc = 0; cc < k; cc++) {
-                    const child_r = top_r + rr;
-                    const child_c = top_c + cc;
+                    const childR = topR + rr;
+                    const childC = topC + cc;
                     
-                    if (child_r < 0 || child_r >= INIT_N || child_c < 0 || child_c >= INIT_N) {
+                    if (childR < 0 || childR >= N || childC < 0 || childC >= N) {
                         continue;
                     }
                     
-                    const childNx = nx + cc * childNw;
-                    const childNy = ny + rr * childNh;
-                    const childNormBbox = [childNx, childNy, childNw, childNh];
+                    const childNX = nx + cc * childNW;
+                    const childNY = ny + rr * childNH;
                     
-                    renderNode(child_r, child_c, childNormBbox);
+                    renderNodeCalculator(childR, childC, childNX, childNY, childNW, childNH);
                 }
             }
         }
         
         /**
-         * El bucle de renderizado principal (requestAnimationFrame).
+         * (NUEVO) Dibuja un parche en la pantalla con borde negro opcional.
          */
-        function renderLoop() {
-            ctx.fillStyle = 'black';
-            ctx.fillRect(0, 0, CANVAS_PX, CANVAS_PX);
-        
-            const normPatchW = 1.0 / INIT_N;
-            const normPatchH = 1.0 / INIT_N;
+        function renderPatchOptimizado(item) {
+            const { patch, sx, sy, sw, sh } = item;
+            const [r, c] = patch.id;
+            const img = patchImages[`${r}_${c}`];
             
-            for (let r = 0; r < INIT_N; r++) {
-                for (let c = 0; c < INIT_N; c++) {
-                    const nx = c * normPatchW;
-                    const ny = r * normPatchH;
-                    renderNode(r, c, [nx, ny, normPatchW, normPatchH]);
-                }
-            }
+            if (!img || !img.complete) return;
             
-            // Pedir el siguiente frame
-            requestAnimationFrame(renderLoop);
-        }
-        
-        // --- Control de Input ---
-        
-        function setupInputHandlers() {
-            canvas.addEventListener('mousedown', (e) => {
-                if (e.button === 0) { // Botón izquierdo
-                    panning = true;
-                    lastPanPos = { x: e.clientX, y: e.clientY };
-                    canvas.style.cursor = 'grabbing';
-                }
-            });
-        
-            canvas.addEventListener('mouseup', (e) => {
-                if (e.button === 0) {
-                    panning = false;
-                    canvas.style.cursor = 'grab';
-                }
-            });
-        
-            canvas.addEventListener('mousemove', (e) => {
-                if (!panning) return;
-                
-                const dx = e.clientX - lastPanPos.x;
-                const dy = e.clientY - lastPanPos.y;
-                lastPanPos = { x: e.clientX, y: e.clientY };
-                
-                const normDx = (dx / CANVAS_PX) * viewRect.w;
-                const normDy = (dy / CANVAS_PX) * viewRect.h;
-                
-                viewRect.x -= normDx;
-                viewRect.y -= normDy;
-                
-                // Limitar paneo
-                viewRect.x = Math.max(0.0, Math.min(1.0 - viewRect.w, viewRect.x));
-                viewRect.y = Math.max(0.0, Math.min(1.0 - viewRect.h, viewRect.y));
-            });
-        
-            canvas.addEventListener('wheel', (e) => {
-                e.preventDefault(); // Evitar scroll de la página
-                
-                const zoomFactor = e.deltaY < 0 ? 0.8 : 1.25; // In vs Out
-                const rect = canvas.getBoundingClientRect();
-                const mx = (e.clientX - rect.left) / CANVAS_PX; // 0..1
-                const my = (e.clientY - rect.top) / CANVAS_PX; // 0..1
-        
-                const imgMx = viewRect.x + mx * viewRect.w;
-                const imgMy = viewRect.y + my * viewRect.h;
-                
-                const vwNew = viewRect.w * zoomFactor;
-                const vhNew = viewRect.h * zoomFactor;
-                
-                viewRect.x = imgMx - mx * vwNew;
-                viewRect.y = imgMy - my * vhNew;
-                viewRect.w = vwNew;
-                viewRect.h = vhNew;
-        
-                // Limitar zoom
-                viewRect.w = Math.max(0, Math.min(1.0, viewRect.w));
-                viewRect.h = viewRect.w; // Mantener cuadrado
-                viewRect.x = Math.max(0.0, Math.min(1.0 - viewRect.w, viewRect.x));
-                viewRect.y = Math.max(0.0, Math.min(1.0 - viewRect.h, viewRect.y));
-            });
-        
-            // Teclas U/J para LOD (similar a Python)
-            window.addEventListener('keydown', (e) => {
-                if (e.key === 'u' || e.key === 'ArrowUp') {
-                    lodThresholdPx = Math.min(200, lodThresholdPx + 2);
-                    console.log(`LOD Threshold: ${lodThresholdPx}px`);
-                } else if (e.key === 'j' || e.key === 'ArrowDown') {
-                    lodThresholdPx = Math.max(1, lodThresholdPx - 2);
-                    console.log(`LOD Threshold: ${lodThresholdPx}px`);
-                }
-            });
-        }
-        
-        /**
-         * Función de arranque principal.
-         */
-        async function main() {
             try {
-                statusDiv.style.display = 'block';
-                statusTitle.textContent = "Cargando Imagen...";
-                statusMessage.textContent = IMG_PATH;
-                statusProgress.textContent = "";
+                // Si el blend está activado, reducir el área de dibujado para crear el borde
+                if (blendEnabled && borderThickness > 0) {
+                    const halfBorder = borderThickness / 2;
+                    
+                    // Dibujar el parche con un margen interno
+                    ctx.drawImage(img, 
+                        Math.round(sx + halfBorder), 
+                        Math.round(sy + halfBorder), 
+                        Math.round(sw - borderThickness), 
+                        Math.round(sh - borderThickness)
+                    );
+                } else {
+                    // Dibujado normal sin borde
+                    ctx.drawImage(img, 
+                        Math.round(sx), 
+                        Math.round(sy), 
+                        Math.round(sw), 
+                        Math.round(sh)
+                    );
+                }
+            } catch (error) {
+                // ignorar errores de dibujado
+            }
+        }
         
-                const { imageElement, imageData } = await loadImage(IMG_PATH, IMG_SIDE);
-                mainImage = imageElement;
-                mainImageData = imageData;
+        function updateInfo() {
+            document.getElementById('zoom-level').textContent = (1 / viewW).toFixed(2) + 'x';
+            document.getElementById('lod-value').textContent = lodThreshold + 'px';
+            document.getElementById('brightness-value').textContent = brightnessFactor.toFixed(2) + 'x';
+            document.getElementById('blend-status').textContent = blendEnabled ? `${borderThickness}px` : 'OFF';
+        }
         
-                statusTitle.textContent = "Procesando...";
-                statusMessage.textContent = `Calculando ${INIT_N*INIT_N} matches... (Esto tomará tiempo)`;
+        // ==================== CONTROLS (Refactorizados) ====================
+        // Los controles ahora solo actualizan el estado y marcan la vista como 'sucia'.
         
-                await buildStaticMatches(
-                    mainImageData,
-                    INIT_N,
-                    MAX_K,
-                    NUM_RANDOM_CANDIDATES,
-                    RESIZE_C_SIDE
+        function adjustBrightness(delta) {
+            brightnessFactor = Math.max(0.3, Math.min(3.0, brightnessFactor + delta));
+            isViewDirty = true;
+        }
+        
+        function toggleBlend() {
+            blendEnabled = !blendEnabled;
+            isViewDirty = true;
+        }
+        
+        function adjustBorderThickness(delta) {
+            borderThickness = Math.max(0, Math.min(20, borderThickness + delta));
+            console.log(`🎨 Grosor del borde: ${borderThickness}px`);
+            isViewDirty = true;
+        }
+        
+        function adjustLOD(delta) {
+            lodThreshold = Math.max(1, Math.min(200, lodThreshold + delta));
+            // ✨ NUEVO: Forzar recálculo cuando cambia LOD
+            lastLODLevel = -1; // Invalidar el LOD cache para forzar recálculo
+            isViewDirty = true;
+        }
+        
+        // ==================== MOUSE EVENTS (Refactorizados) ====================
+        canvas.addEventListener('mousedown', (e) => {
+            isPanning = true;
+            lastX = e.offsetX;
+            lastY = e.offsetY;
+        });
+        
+        canvas.addEventListener('mousemove', (e) => {
+            if (!isPanning) return;
+            
+            const dx = e.offsetX - lastX;
+            const dy = e.offsetY - lastY;
+            lastX = e.offsetX;
+            lastY = e.offsetY;
+            
+            const normDX = (dx / CANVAS_SIZE) * viewW;
+            const normDY = (dy / CANVAS_SIZE) * viewH;
+            
+            viewX = Math.max(0, Math.min(1 - viewW, viewX - normDX));
+            viewY = Math.max(0, Math.min(1 - viewH, viewY - normDY));
+            
+            isViewDirty = true; // Solo marcar, no renderizar
+        });
+        
+        canvas.addEventListener('mouseup', () => {
+            isPanning = false;
+        });
+        
+        canvas.addEventListener('mouseleave', () => {
+            isPanning = false;
+        });
+        
+        canvas.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            
+            const zoomFactor = e.deltaY > 0 ? 1.05 : 0.95;
+            const mx = e.offsetX / CANVAS_SIZE;
+            const my = e.offsetY / CANVAS_SIZE;
+            
+            const imgMX = viewX + mx * viewW;
+            const imgMY = viewY + my * viewH;
+            
+            const newW = viewW * zoomFactor;
+            const newH = viewH * zoomFactor;
+            
+            viewX = imgMX - mx * newW;
+            viewY = imgMY - my * newH;
+            viewW = newW;
+            viewH = newH;
+            
+            viewW = Math.max(0, Math.min(1, viewW));
+            viewH = viewW;
+            viewX = Math.max(0, Math.min(1 - viewW, viewX));
+            viewY = Math.max(0, Math.min(1 - viewH, viewY));
+            
+            isViewDirty = true; // Solo marcar, no renderizar
+        });
+        
+        // ==================== TOUCH EVENTS (Refactorizados) ====================
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            
+            if (e.touches.length === 1) {
+                isPanning = true;
+                const touch = e.touches[0];
+                const rect = canvas.getBoundingClientRect();
+                lastX = touch.clientX - rect.left;
+                lastY = touch.clientY - rect.top;
+            } else if (e.touches.length === 2) {
+                const touch1 = e.touches[0];
+                const touch2 = e.touches[1];
+                touchStartDist = Math.hypot(
+                    touch2.clientX - touch1.clientX,
+                    touch2.clientY - touch1.clientY
+                );
+            }
+        });
+        
+        canvas.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            
+            if (e.touches.length === 1 && isPanning) {
+                const touch = e.touches[0];
+                const rect = canvas.getBoundingClientRect();
+                const x = touch.clientX - rect.left;
+                const y = touch.clientY - rect.top;
+                
+                const dx = x - lastX;
+                const dy = y - lastY;
+                lastX = x;
+                lastY = y;
+                
+                const normDX = (dx / CANVAS_SIZE) * viewW;
+                const normDY = (dy / CANVAS_SIZE) * viewH;
+                
+                viewX = Math.max(0, Math.min(1 - viewW, viewX - normDX));
+                viewY = Math.max(0, Math.min(1 - viewH, viewY - normDY));
+                
+                isViewDirty = true;
+            } else if (e.touches.length === 2) {
+                const touch1 = e.touches[0];
+                const touch2 = e.touches[1];
+                const currentDist = Math.hypot(
+                    touch2.clientX - touch1.clientX,
+                    touch2.clientY - touch1.clientY
                 );
                 
-                // Si llegamos aquí, los matches están listos
-                setupInputHandlers();
-                requestAnimationFrame(renderLoop); // Iniciar el bucle de renderizado
-        
-            } catch (error) {
-                console.error(error);
-                statusTitle.textContent = "Error";
-                statusMessage.textContent = error.message;
-                statusProgress.textContent = "Revisa la consola (F12)";
+                const zoomFactor = touchStartDist / currentDist;
+                
+                const centerX = (touch1.clientX + touch2.clientX) / 2;
+                const centerY = (touch1.clientY + touch2.clientY) / 2;
+                const rect = canvas.getBoundingClientRect();
+                const mx = (centerX - rect.left) / CANVAS_SIZE;
+                const my = (centerY - rect.top) / CANVAS_SIZE;
+                
+                const imgMX = viewX + mx * viewW;
+                const imgMY = viewY + my * viewH;
+                
+                const newW = viewW * zoomFactor;
+                const newH = viewH * zoomFactor;
+                
+                viewX = imgMX - mx * newW;
+                viewY = imgMY - my * newH;
+                viewW = newW;
+                viewH = newH;
+                
+                viewW = Math.max(0.001, Math.min(1, viewW));
+                viewH = viewW;
+                viewX = Math.max(0, Math.min(1 - viewW, viewX));
+                viewY = Math.max(0, Math.min(1 - viewH, viewY));
+                
+                touchStartDist = currentDist;
+                isViewDirty = true;
             }
-        }
+        });
         
-        // Iniciar la aplicación
-        main();</script>
+        canvas.addEventListener('touchend', (e) => {
+            if (e.touches.length === 0) {
+                isPanning = false;
+            }
+        });
+        
+        // ==================== KEYBOARD SHORTCUTS (Sin cambios) ====================
+        document.addEventListener('keydown', (e) => {
+            switch(e.key.toLowerCase()) {
+                case 'l':
+                    adjustBrightness(0.05);
+                    break;
+                case 'k':
+                    adjustBrightness(-0.05);
+                    break;
+                case 'b':
+                    toggleBlend();
+                    break;
+                case 'arrowup':
+                case 'u':
+                    adjustLOD(2);
+                    break;
+                case 'arrowdown':
+                case 'j':
+                    adjustLOD(-2);
+                    break;
+                case 'arrowleft':
+                    adjustBorderThickness(-1);
+                    break;
+                case 'arrowright':
+                    adjustBorderThickness(1);
+                    break;
+            }
+        });
+        
+        // ==================== INIT ====================
+        drawLoop(); // Iniciar el bucle de renderizado
+        loadProjects(); // Cargar la lista de proyectos
+    </script>
 </body>
 </html>
