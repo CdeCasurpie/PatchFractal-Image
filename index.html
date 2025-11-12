@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fractal por Patches v7.0 (Web Port)</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            display: grid;
+            place-items: center;
+            min-height: 100vh;
+            background-color: #111;
+            color: #eee;
+            margin: 0;
+        }
+        canvas {
+            border: 1px solid #555;
+            cursor: grab;
+        }
+        canvas:active {
+            cursor: grabbing;
+        }
+        #status {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 1.5em;
+            background-color: rgba(0, 0, 0, 0.8);
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+            display: none; /* Se muestra con JS */
+        }
+    </style>
+</head>
+<body>
+    <canvas id="fractal-canvas" width="800" height="800"></canvas>
+    
+    <div id="status">
+        <strong id="status-title">Procesando...</strong><br>
+        <span id="status-message">Calculando matches de parches.</span><br>
+        <span id="status-progress">(0/1024)</span>
+    </div>
+
+    <script>
+        // worker.js
+// Equivalente a la función 'find_best_square_resized_diff' de Python.
+
+/**
+ * Redimensiona un bloque de píxeles (ImageData) a un tamaño CxC
+ * usando un OffscreenCanvas.
+ * Esta es la traducción de 'cv2.resize(img, (C, C))'.
+ */
+function resizeImageData(imgData, C_SIDE) {
+    // Necesitamos un canvas temporal para dibujar los píxeles originales
+    const tempCanvas = new OffscreenCanvas(imgData.width, imgData.height);
+    const tempCtx = tempCanvas.getContext('2d');
+    tempCtx.putImageData(imgData, 0, 0);
+
+    // Ahora creamos el canvas final al tamaño deseado
+    const resizedCanvas = new OffscreenCanvas(C_SIDE, C_SIDE);
+    const resizedCtx = resizedCanvas.getContext('2d');
+    
+    // Dibujamos la imagen original en el canvas redimensionado
+    // Esto aplica la interpolación (similar a cv2.INTER_AREA/LINEAR)
+    resizedCtx.drawImage(tempCanvas, 0, 0, C_SIDE, C_SIDE);
+    
+    // Devolvemos los datos de píxeles redimensionados
+    return resizedCtx.getImageData(0, 0, C_SIDE, C_SIDE);
+}
+
+/**
+ * Calcula el error entre dos imágenes redimensionadas.
+ * Esta es la traducción de la métrica MAE y np.linalg.norm.
+ */
+function calculateResizedDiff(targResizedData, candResizedData) {
+    const targPixels = targResizedData.data;
+    const candPixels = candResizedData.data;
+    const len = targPixels.length;
+
+    let sumErrorR = 0;
+    let sumErrorG = 0;
+    let sumErrorB = 0;
+
+    for (let i = 0; i < len; i += 4) {
+        sumErrorR += Math.abs(targPixels[i] - candPixels[i]);
+        sumErrorG += Math.abs(targPixels[i+1] - candPixels[i+1]);
+        sumErrorB += Math.abs(targPixels[i+2] - candPixels[i+2]);
+    }
+
+    // np.mean(diff_img, axis=(0, 1))
+    const numPixels = len / 4;
+    const avgErrorR = sumErrorR / numPixels;
+    const avgErrorG = sumErrorG / numPixels;
+    const avgErrorB = sumErrorB / numPixels;
+
+    // np.linalg.norm(avg_error_vec)
+    // Distancia del vector [R, G, B] al origen [0, 0, 0]
+    const score = Math.sqrt(avgErrorR**2 + avgErrorG**2 + avgErrorB**2);
+    
+    return score;
+}
+
+
+/**
+ * Función principal del worker.
+ * Recibe los datos de la imagen y los parámetros de búsqueda.
+ */
+self.onmessage = function(e) {
+    const { 
+        targetIdx, 
+        patches, 
+        imgData, // ImageData completo
+        N, 
+        ks, 
+        numCandidates, 
+        C_SIDE 
+    } = e.data;
+
+    const targetPatch = patches[targetIdx];
+    const patchPx = imgData.height / N;
+
+    // 1. Obtener y redimensionar el parche objetivo UNA VEZ
+    const [tx0, ty0] = targetPatch.bbox;
+    // Extraer la sub-imagen (ImageData)
+    // NOTA: ImageData no tiene un método 'slice' simple.
+    // Creamos una temporal para la extracción.
+    const tempCanvas = new OffscreenCanvas(patchPx, patchPx);
+    const tempCtx = tempCanvas.getContext('2d');
+    tempCtx.putImageData(imgData, -tx0, -ty0);
+    const targetImgData = tempCtx.getImageData(0, 0, patchPx, patchPx);
+    
+    const targImgResized = resizeImageData(targetImgData, C_SIDE);
+    
+    let best = null;
+    let bestScore = Infinity;
+
+    for (const k of ks) {
+        // 2. Generar candidatos aleatorios
+        for (let i = 0; i < numCandidates; i++) {
+            const rt = Math.floor(Math.random() * (N - k + 1));
+            const ct = Math.floor(Math.random() * (N - k + 1));
+            
+            // 3. Obtener y redimensionar el bloque candidato (¡COSTOSO!)
+            const y0 = rt * patchPx;
+            const x0 = ct * patchPx;
+            const size = k * patchPx;
+
+            // Extraer la sub-imagen (ImageData)
+            tempCtx.canvas.width = size;
+            tempCtx.canvas.height = size;
+            tempCtx.putImageData(imgData, -x0, -y0);
+            const candImgData = tempCtx.getImageData(0, 0, size, size);
+
+            const candImgResized = resizeImageData(candImgData, C_SIDE);
+
+            // 4. Calcular diferencia y puntuación
+            const score = calculateResizedDiff(targImgResized, candImgResized);
+
+            // 7. Minimizar la puntuación
+            if (score < bestScore) {
+                bestScore = score;
+                best = { top: [rt, ct], k: k, score: score };
+            }
+        }
+    }
+
+    if (best === null) {
+        best = { top: targetPatch.id, k: 1, score: 0.0 };
+    }
+    
+    // Devolver el resultado al hilo principal
+    self.postMessage({ targetIdx, match: best });
+};
+    </script>
+
+    <script>// app.js
+        // Equivalente al 'main()' de Python y las funciones de renderizado.
+        
+        // --- CONFIGURACIÓN ---
+        const IMG_PATH = "input.jpg"; // Asegúrate que la ruta sea correcta
+        const IMG_SIDE = 1024;
+        const CANVAS_PX = 800;
+        const LOD_THRESHOLD_PX = 16;
+        const INIT_N = 32;
+        const MAX_K = 16;
+        const RESIZE_C_SIDE = 128;
+        const NUM_RANDOM_CANDIDATES = 2500;
+        // ---------------------
+        
+        // --- Elementos del DOM ---
+        const canvas = document.getElementById('fractal-canvas');
+        const ctx = canvas.getContext('2d');
+        const statusDiv = document.getElementById('status');
+        const statusTitle = document.getElementById('status-title');
+        const statusMessage = document.getElementById('status-message');
+        const statusProgress = document.getElementById('status-progress');
+        
+        // --- Estado Global ---
+        let mainImage = null;       // La imagen original (HTMLImageElement)
+        let mainImageData = null;   // Los píxeles de la imagen (ImageData)
+        let patches = [];           // Array de parches (nuestros 'matches')
+        let viewRect = { x: 0, y: 0, w: 1, h: 1 }; // (vx, vy, vw, vh)
+        let lodThresholdPx = LOD_THRESHOLD_PX;
+        
+        let panning = false;
+        let lastPanPos = { x: 0, y: 0 };
+        
+        /**
+         * Carga la imagen, la cuadra y la dibuja en un canvas
+         * para extraer sus datos de píxeles (ImageData).
+         */
+        async function loadImage(path, side) {
+            return new Promise((resolve, reject) => {
+                const img = new Image();
+                img.crossOrigin = "Anonymous"; // Para Tainted Canvas
+                img.onload = () => {
+                    // Lógica de recorte cuadrado (como en Python)
+                    const s = Math.min(img.width, img.height);
+                    const cx = img.width / 2;
+                    const cy = img.height / 2;
+                    const sx = cx - s / 2;
+                    const sy = cy - s / 2;
+        
+                    // Dibujar en un canvas temporal al tamaño deseado
+                    const tempCanvas = document.createElement('canvas');
+                    tempCanvas.width = side;
+                    tempCanvas.height = side;
+                    const tempCtx = tempCanvas.getContext('2d');
+                    
+                    // Dibuja la porción cuadrada de la imagen original,
+                    // redimensionándola al 'side' deseado.
+                    tempCtx.drawImage(img, sx, sy, s, s, 0, 0, side, side);
+                    
+                    // Devolvemos tanto el elemento imagen (para renderizar)
+                    // como sus datos de píxeles (para el worker)
+                    resolve({
+                        imageElement: tempCanvas, // Usamos el canvas como fuente de imagen
+                        imageData: tempCtx.getImageData(0, 0, side, side)
+                    });
+                };
+                img.onerror = (e) => reject(new Error(`No se pudo cargar la imagen: ${path}. Asegúrate de que la ruta sea correcta.`));
+                img.src = path;
+            });
+        }
+        
+        /**
+         * Pre-cálculo: Divide la imagen en parches (solo BBox).
+         * El worker se encargará de extraer los píxeles.
+         */
+        function buildStaticPatches(N, imgSide) {
+            const patchPx = imgSide / N;
+            const generatedPatches = [];
+            for (let r = 0; r < N; r++) {
+                for (let c = 0; c < N; c++) {
+                    const x0 = c * patchPx;
+                    const y0 = r * patchPx;
+                    generatedPatches.push({
+                        id: [r, c],
+                        bbox: [x0, y0], // Solo necesitamos la esquina superior izquierda
+                        match: null
+                    });
+                }
+            }
+            return generatedPatches;
+        }
+        
+        /**
+         * Genera la lista de 'k' candidatos.
+         */
+        function candidateKs(N, max_k) {
+            let ks = [];
+            const upper = Math.min(max_k, N);
+            // JS 'range' es más feo
+            for (let k = upper; k > 1; k--) {
+                if (k % 2 === 0) {
+                    ks.push(k);
+                }
+            }
+            if (ks.length === 0 && N >= 2) {
+                ks = [2];
+            }
+            return ks;
+        }
+        
+        /**
+         * Orquesta el pool de Web Workers para calcular los matches.
+         */
+        function buildStaticMatches(imgData, N, max_k, numCandidates, C_SIDE) {
+            return new Promise((resolve) => {
+                console.log("Fase 1: Pre-cálculo de parches (BBoxes)...");
+                patches = buildStaticPatches(N, imgData.height);
+                const ks = candidateKs(N, max_k);
+                const total = patches.length;
+        
+                console.log(`Fase 2: Búsqueda de matches (paralelizada)...`);
+                console.warn("ADVERTENCIA: Esta métrica es lenta en JS/CPU.");
+                
+                statusDiv.style.display = 'block';
+                statusProgress.textContent = `(0/${total})`;
+        
+                const numWorkers = navigator.hardwareConcurrency || 4;
+                const workers = [];
+                let taskQueue = [...patches.keys()]; // Cola de índices [0, 1, ..., total-1]
+                let results = 0;
+        
+                for (let i = 0; i < numWorkers; i++) {
+                    const worker = new Worker('worker.js');
+                    worker.onmessage = (e) => {
+                        const { targetIdx, match } = e.data;
+                        patches[targetIdx].match = match;
+                        results++;
+                        
+                        // Actualizar UI
+                        statusProgress.textContent = `(${results}/${total})`;
+        
+                        if (taskQueue.length > 0) {
+                            // Enviar siguiente tarea al worker
+                            const nextTaskIdx = taskQueue.pop();
+                            worker.postMessage({
+                                targetIdx: nextTaskIdx,
+                                patches: patches,
+                                imgData: imgData,
+                                N: N,
+                                ks: ks,
+                                numCandidates: numCandidates,
+                                C_SIDE: C_SIDE
+                            });
+                        } else {
+                            // Este worker terminó
+                            worker.terminate();
+                        }
+        
+                        if (results === total) {
+                            console.log("Cálculo de matches completado.");
+                            statusDiv.style.display = 'none';
+                            resolve(patches);
+                        }
+                    };
+                    workers.push(worker);
+                }
+        
+                // Iniciar las primeras tareas
+                for (let i = 0; i < numWorkers; i++) {
+                    if (taskQueue.length > 0) {
+                        const taskIdx = taskQueue.pop();
+                        workers[i].postMessage({
+                            targetIdx: taskIdx,
+                            patches: patches,
+                            imgData: imgData,
+                            N: N,
+                            ks: ks,
+                            numCandidates: numCandidates,
+                            C_SIDE: C_SIDE
+                        });
+                    }
+                }
+            });
+        }
+        
+        /**
+         * Función de dibujado recursivo, equivalente a 'render_dynamic_zoom'.
+         */
+        function renderNode(r, c, normBbox) {
+            const [nx, ny, nw, nh] = normBbox;
+            
+            // 1. Frustum Culling (¿Está fuera de la vista?)
+            if (nx + nw < viewRect.x || nx > viewRect.x + viewRect.w ||
+                ny + nh < viewRect.y || ny > viewRect.y + viewRect.h) {
+                return;
+            }
+        
+            // 2. Calcular coordenadas de pantalla
+            const sx = (nx - viewRect.x) / viewRect.w * CANVAS_PX;
+            const sy = (ny - viewRect.y) / viewRect.h * CANVAS_PX;
+            const sw = nw / viewRect.w * CANVAS_PX;
+            const sh = nh / viewRect.h * CANVAS_PX;
+        
+            // 3. Obtener el nodo
+            const idx = r * INIT_N + c;
+            if (idx >= patches.length) return;
+            const node = patches[idx];
+        
+            // 4. Decidir si recursar (LOD)
+            if (sw < lodThresholdPx || sh < lodThresholdPx ||
+                !node.match || node.match.k <= 1) {
+                
+                // Caso Base: Dibujar el parche de la imagen original
+                // (En Python era blit_patch_img, aquí usamos drawImage)
+                const [imgX, imgY] = node.bbox;
+                const patchPx = mainImage.height / INIT_N;
+        
+                ctx.drawImage(
+                    mainImage,       // La imagen fuente completa
+                    imgX, imgY,      // (sx, sy) Píxel de origen en la fuente
+                    patchPx, patchPx, // (sw, sh) Tamaño en la fuente
+                    sx, sy,          // (dx, dy) Píxel de destino en el canvas
+                    sw, sh           // (dw, dh) Tamaño en el canvas
+                );
+                return;
+            }
+            
+            // 5. Caso Recursivo
+            const { top, k } = node.match;
+            const [top_r, top_c] = top;
+            
+            const childNw = nw / k;
+            const childNh = nh / k;
+        
+            for (let rr = 0; rr < k; rr++) {
+                for (let cc = 0; cc < k; cc++) {
+                    const child_r = top_r + rr;
+                    const child_c = top_c + cc;
+                    
+                    if (child_r < 0 || child_r >= INIT_N || child_c < 0 || child_c >= INIT_N) {
+                        continue;
+                    }
+                    
+                    const childNx = nx + cc * childNw;
+                    const childNy = ny + rr * childNh;
+                    const childNormBbox = [childNx, childNy, childNw, childNh];
+                    
+                    renderNode(child_r, child_c, childNormBbox);
+                }
+            }
+        }
+        
+        /**
+         * El bucle de renderizado principal (requestAnimationFrame).
+         */
+        function renderLoop() {
+            ctx.fillStyle = 'black';
+            ctx.fillRect(0, 0, CANVAS_PX, CANVAS_PX);
+        
+            const normPatchW = 1.0 / INIT_N;
+            const normPatchH = 1.0 / INIT_N;
+            
+            for (let r = 0; r < INIT_N; r++) {
+                for (let c = 0; c < INIT_N; c++) {
+                    const nx = c * normPatchW;
+                    const ny = r * normPatchH;
+                    renderNode(r, c, [nx, ny, normPatchW, normPatchH]);
+                }
+            }
+            
+            // Pedir el siguiente frame
+            requestAnimationFrame(renderLoop);
+        }
+        
+        // --- Control de Input ---
+        
+        function setupInputHandlers() {
+            canvas.addEventListener('mousedown', (e) => {
+                if (e.button === 0) { // Botón izquierdo
+                    panning = true;
+                    lastPanPos = { x: e.clientX, y: e.clientY };
+                    canvas.style.cursor = 'grabbing';
+                }
+            });
+        
+            canvas.addEventListener('mouseup', (e) => {
+                if (e.button === 0) {
+                    panning = false;
+                    canvas.style.cursor = 'grab';
+                }
+            });
+        
+            canvas.addEventListener('mousemove', (e) => {
+                if (!panning) return;
+                
+                const dx = e.clientX - lastPanPos.x;
+                const dy = e.clientY - lastPanPos.y;
+                lastPanPos = { x: e.clientX, y: e.clientY };
+                
+                const normDx = (dx / CANVAS_PX) * viewRect.w;
+                const normDy = (dy / CANVAS_PX) * viewRect.h;
+                
+                viewRect.x -= normDx;
+                viewRect.y -= normDy;
+                
+                // Limitar paneo
+                viewRect.x = Math.max(0.0, Math.min(1.0 - viewRect.w, viewRect.x));
+                viewRect.y = Math.max(0.0, Math.min(1.0 - viewRect.h, viewRect.y));
+            });
+        
+            canvas.addEventListener('wheel', (e) => {
+                e.preventDefault(); // Evitar scroll de la página
+                
+                const zoomFactor = e.deltaY < 0 ? 0.8 : 1.25; // In vs Out
+                const rect = canvas.getBoundingClientRect();
+                const mx = (e.clientX - rect.left) / CANVAS_PX; // 0..1
+                const my = (e.clientY - rect.top) / CANVAS_PX; // 0..1
+        
+                const imgMx = viewRect.x + mx * viewRect.w;
+                const imgMy = viewRect.y + my * viewRect.h;
+                
+                const vwNew = viewRect.w * zoomFactor;
+                const vhNew = viewRect.h * zoomFactor;
+                
+                viewRect.x = imgMx - mx * vwNew;
+                viewRect.y = imgMy - my * vhNew;
+                viewRect.w = vwNew;
+                viewRect.h = vhNew;
+        
+                // Limitar zoom
+                viewRect.w = Math.max(0, Math.min(1.0, viewRect.w));
+                viewRect.h = viewRect.w; // Mantener cuadrado
+                viewRect.x = Math.max(0.0, Math.min(1.0 - viewRect.w, viewRect.x));
+                viewRect.y = Math.max(0.0, Math.min(1.0 - viewRect.h, viewRect.y));
+            });
+        
+            // Teclas U/J para LOD (similar a Python)
+            window.addEventListener('keydown', (e) => {
+                if (e.key === 'u' || e.key === 'ArrowUp') {
+                    lodThresholdPx = Math.min(200, lodThresholdPx + 2);
+                    console.log(`LOD Threshold: ${lodThresholdPx}px`);
+                } else if (e.key === 'j' || e.key === 'ArrowDown') {
+                    lodThresholdPx = Math.max(1, lodThresholdPx - 2);
+                    console.log(`LOD Threshold: ${lodThresholdPx}px`);
+                }
+            });
+        }
+        
+        /**
+         * Función de arranque principal.
+         */
+        async function main() {
+            try {
+                statusDiv.style.display = 'block';
+                statusTitle.textContent = "Cargando Imagen...";
+                statusMessage.textContent = IMG_PATH;
+                statusProgress.textContent = "";
+        
+                const { imageElement, imageData } = await loadImage(IMG_PATH, IMG_SIDE);
+                mainImage = imageElement;
+                mainImageData = imageData;
+        
+                statusTitle.textContent = "Procesando...";
+                statusMessage.textContent = `Calculando ${INIT_N*INIT_N} matches... (Esto tomará tiempo)`;
+        
+                await buildStaticMatches(
+                    mainImageData,
+                    INIT_N,
+                    MAX_K,
+                    NUM_RANDOM_CANDIDATES,
+                    RESIZE_C_SIDE
+                );
+                
+                // Si llegamos aquí, los matches están listos
+                setupInputHandlers();
+                requestAnimationFrame(renderLoop); // Iniciar el bucle de renderizado
+        
+            } catch (error) {
+                console.error(error);
+                statusTitle.textContent = "Error";
+                statusMessage.textContent = error.message;
+                statusProgress.textContent = "Revisa la consola (F12)";
+            }
+        }
+        
+        // Iniciar la aplicación
+        main();</script>
+</body>
+</html>
